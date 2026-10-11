@@ -1,0 +1,592 @@
+
+--// AX NEON UI | ROBLOX STUDIO
+--// LocalScript in StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- SETTINGS
+local FOV_RADIUS = 120
+local MIN_FOV = 1
+local MAX_FOV = 120
+
+local AIM_ASSIST = false
+local WALL_CHECK = false
+local KILL_CHECK = false
+local PLAYER_HIGHLIGHTS = false
+
+local RENDER_NAME = "AxInstantHeadAim"
+
+-- CLEANUP
+RunService:UnbindFromRenderStep(RENDER_NAME)
+
+local oldGui = PlayerGui:FindFirstChild("AxAimGui")
+if oldGui then
+    oldGui:Destroy()
+end
+
+-- HELPERS
+local function corner(obj, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = obj
+    return c
+end
+
+local function stroke(obj, color, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or Color3.fromRGB(70, 150, 255)
+    s.Thickness = thickness or 1.5
+    s.Parent = obj
+    return s
+end
+
+local function makeLabel(parent, text, size, pos, textSize)
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = size
+    label.Position = pos
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(235, 243, 255)
+    label.TextSize = textSize or 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+local function makeButton(parent, text, size, pos)
+    local b = Instance.new("TextButton")
+    b.Size = size
+    b.Position = pos
+    b.Text = text
+    b.TextSize = 13
+    b.Font = Enum.Font.GothamSemibold
+    b.TextColor3 = Color3.fromRGB(245, 248, 255)
+    b.BackgroundColor3 = Color3.fromRGB(25, 32, 52)
+    b.AutoButtonColor = false
+    b.BorderSizePixel = 0
+    b.Parent = parent
+    corner(b, 8)
+    return b
+end
+
+-- SCREEN GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "AxAimGui"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 20
+gui.IgnoreGuiInset = true
+gui.Parent = PlayerGui
+
+-- CENTERED FOV CIRCLE
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+fovCircle.Size = UDim2.fromOffset(FOV_RADIUS * 2, FOV_RADIUS * 2)
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.Parent = gui
+
+corner(fovCircle, 120)
+
+local fovStroke = stroke(
+    fovCircle,
+    Color3.fromRGB(50, 145, 255),
+    1.5
+)
+fovStroke.Transparency = 0.1
+
+-- FLOATING NEON AX BUTTON
+-- Original size preserved: 52 x 44
+local axButton = Instance.new("TextButton")
+axButton.Name = "AxButton"
+axButton.Size = UDim2.fromOffset(52, 44)
+axButton.Position = UDim2.new(0, 25, 0.4, 0)
+axButton.BackgroundColor3 = Color3.fromRGB(8, 15, 35)
+axButton.Text = "Ax"
+axButton.TextColor3 = Color3.fromRGB(235, 248, 255)
+axButton.TextSize = 20
+axButton.Font = Enum.Font.GothamBold
+axButton.AutoButtonColor = false
+axButton.BorderSizePixel = 0
+axButton.ZIndex = 2
+axButton.Parent = gui
+corner(axButton, 12)
+
+local axGradient = Instance.new("UIGradient")
+axGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 24, 58)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 65, 155)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(7, 14, 35))
+})
+axGradient.Rotation = 35
+axGradient.Parent = axButton
+
+local axStroke = stroke(
+    axButton,
+    Color3.fromRGB(50, 145, 255),
+    1.5
+)
+
+local glow = Instance.new("Frame")
+glow.Name = "AxGlow"
+glow.AnchorPoint = Vector2.new(0.5, 0.5)
+glow.Position = UDim2.fromScale(0.5, 0.5)
+glow.Size = UDim2.new(1, 10, 1, 10)
+glow.BackgroundColor3 = Color3.fromRGB(20, 105, 255)
+glow.BackgroundTransparency = 0.72
+glow.BorderSizePixel = 0
+glow.ZIndex = 1
+glow.Parent = axButton
+corner(glow, 15)
+
+TweenService:Create(
+    axStroke,
+    TweenInfo.new(
+        1.1,
+        Enum.EasingStyle.Sine,
+        Enum.EasingDirection.InOut,
+        -1,
+        true
+    ),
+    {
+        Color = Color3.fromRGB(100, 220, 255),
+        Thickness = 2.5
+    }
+):Play()
+
+axButton.MouseEnter:Connect(function()
+    TweenService:Create(
+        axButton,
+        TweenInfo.new(0.15),
+        {BackgroundColor3 = Color3.fromRGB(25, 55, 115)}
+    ):Play()
+end)
+
+axButton.MouseLeave:Connect(function()
+    TweenService:Create(
+        axButton,
+        TweenInfo.new(0.15),
+        {BackgroundColor3 = Color3.fromRGB(8, 15, 35)}
+    ):Play()
+end)
+
+-- MAIN MENU
+local menu = Instance.new("Frame")
+menu.Name = "MainMenu"
+menu.Size = UDim2.fromOffset(290, 330)
+menu.Position = UDim2.new(0, 90, 0.25, 0)
+menu.BackgroundColor3 = Color3.fromRGB(10, 15, 29)
+menu.BorderSizePixel = 0
+menu.Visible = false
+menu.ClipsDescendants = true
+menu.Parent = gui
+corner(menu, 12)
+stroke(menu, Color3.fromRGB(45, 110, 220), 1.5)
+
+local menuGradient = Instance.new("UIGradient")
+menuGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(17, 27, 49)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(7, 10, 22))
+})
+menuGradient.Rotation = 90
+menuGradient.Parent = menu
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 42)
+header.BackgroundColor3 = Color3.fromRGB(15, 30, 57)
+header.BorderSizePixel = 0
+header.Parent = menu
+corner(header, 12)
+
+makeLabel(
+    header,
+    "AX  /  HEAD TARGET",
+    UDim2.new(1, -20, 1, 0),
+    UDim2.fromOffset(12, 0),
+    14
+)
+
+local page = Instance.new("Frame")
+page.Name = "MainPage"
+page.Position = UDim2.fromOffset(0, 48)
+page.Size = UDim2.new(1, 0, 1, -48)
+page.BackgroundTransparency = 1
+page.Parent = menu
+
+makeLabel(
+    page,
+    "MAIN SETTINGS",
+    UDim2.new(1, -24, 0, 22),
+    UDim2.fromOffset(12, 0),
+    12
+)
+
+-- TOGGLES
+local function makeToggle(text, y, callback)
+    local enabled = false
+
+    local b = makeButton(
+        page,
+        "",
+        UDim2.new(1, -24, 0, 36),
+        UDim2.fromOffset(12, y)
+    )
+    b.TextXAlignment = Enum.TextXAlignment.Left
+
+    local function update()
+        b.Text = "   " .. text .. "       " ..
+            (enabled and "ON" or "OFF")
+
+        b.BackgroundColor3 = enabled
+            and Color3.fromRGB(18, 70, 115)
+            or Color3.fromRGB(22, 30, 49)
+    end
+
+    b.Activated:Connect(function()
+        enabled = not enabled
+        update()
+        callback(enabled)
+    end)
+
+    update()
+end
+
+makeToggle("Aim Assist", 25, function(v)
+    AIM_ASSIST = v
+end)
+
+makeToggle("Wall Check", 67, function(v)
+    WALL_CHECK = v
+end)
+
+makeToggle("Kill Check", 109, function(v)
+    KILL_CHECK = v
+end)
+
+makeToggle("Player Highlights", 151, function(v)
+    PLAYER_HIGHLIGHTS = v
+end)
+
+-- FOV SLIDER
+makeLabel(
+    page,
+    "FOV SETTINGS",
+    UDim2.new(1, -24, 0, 20),
+    UDim2.fromOffset(12, 197),
+    12
+)
+
+local sliderLabel = makeLabel(
+    page,
+    "FOV Radius: " .. FOV_RADIUS,
+    UDim2.new(1, -24, 0, 20),
+    UDim2.fromOffset(12, 218),
+    13
+)
+
+local sliderBar = Instance.new("Frame")
+sliderBar.Name = "FOVSlider"
+sliderBar.Position = UDim2.fromOffset(16, 251)
+sliderBar.Size = UDim2.new(1, -32, 0, 8)
+sliderBar.BackgroundColor3 = Color3.fromRGB(40, 51, 76)
+sliderBar.BorderSizePixel = 0
+sliderBar.Active = true
+sliderBar.Parent = page
+corner(sliderBar, 8)
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(1, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(30, 145, 255)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBar
+corner(sliderFill, 8)
+
+local sliderFillGradient = Instance.new("UIGradient")
+sliderFillGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 100, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 220, 255))
+})
+sliderFillGradient.Parent = sliderFill
+
+local sliderKnob = Instance.new("Frame")
+sliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+sliderKnob.Size = UDim2.fromOffset(16, 16)
+sliderKnob.Position = UDim2.new(1, 0, 0.5, 0)
+sliderKnob.BackgroundColor3 = Color3.fromRGB(240, 250, 255)
+sliderKnob.BorderSizePixel = 0
+sliderKnob.Parent = sliderBar
+corner(sliderKnob, 8)
+stroke(sliderKnob, Color3.fromRGB(65, 165, 255), 1.5)
+
+local sliding = false
+local activeTouch = nil
+
+local function setFOVFromX(x)
+    local width = sliderBar.AbsoluteSize.X
+    if width <= 0 then return end
+
+    local percent = math.clamp(
+        (x - sliderBar.AbsolutePosition.X) / width,
+        0,
+        1
+    )
+
+    FOV_RADIUS = math.clamp(
+        math.floor(
+            MIN_FOV + percent * (MAX_FOV - MIN_FOV) + 0.5
+        ),
+        MIN_FOV,
+        MAX_FOV
+    )
+
+    sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+    sliderKnob.Position = UDim2.new(percent, 0, 0.5, 0)
+    sliderLabel.Text = "FOV Radius: " .. FOV_RADIUS
+end
+
+sliderBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        sliding = true
+        activeTouch = nil
+        setFOVFromX(input.Position.X)
+    elseif input.UserInputType == Enum.UserInputType.Touch then
+        sliding = true
+        activeTouch = input
+        setFOVFromX(input.Position.X)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not sliding then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        and not activeTouch then
+        setFOVFromX(input.Position.X)
+    elseif input == activeTouch then
+        setFOVFromX(input.Position.X)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input == activeTouch then
+        sliding = false
+        activeTouch = nil
+    end
+end)
+
+-- DRAGGABLE BUTTON AND MENU
+local function makeDraggable(object, dragArea)
+    local dragging = false
+    local dragStart
+    local startPosition
+    local activeInput
+
+    dragArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            activeInput = input
+            dragStart = input.Position
+            startPosition = object.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+            if activeInput.UserInputType == Enum.UserInputType.Touch
+                and input ~= activeInput then
+                return
+            end
+
+            local delta = input.Position - dragStart
+            object.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input == activeInput
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+            activeInput = nil
+        end
+    end)
+end
+
+makeDraggable(axButton, axButton)
+makeDraggable(menu, header)
+
+axButton.Activated:Connect(function()
+    menu.Visible = not menu.Visible
+end)
+
+-- PLAYER HIGHLIGHTS
+local function updateHighlight(player)
+    if player == LocalPlayer then return end
+
+    local character = player.Character
+    if not character then return end
+
+    local existing = character:FindFirstChild("AxPlayerHighlight")
+
+    if PLAYER_HIGHLIGHTS then
+        if not existing then
+            local h = Instance.new("Highlight")
+            h.Name = "AxPlayerHighlight"
+            h.FillColor = Color3.fromRGB(30, 125, 255)
+            h.OutlineColor = Color3.fromRGB(140, 225, 255)
+            h.FillTransparency = 0.55
+            h.OutlineTransparency = 0
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Parent = character
+        end
+    elseif existing then
+        existing:Destroy()
+    end
+end
+
+local function refreshHighlights()
+    for _, player in ipairs(Players:GetPlayers()) do
+        updateHighlight(player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        updateHighlight(player)
+    end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        updateHighlight(player)
+    end)
+end
+
+-- WALL CHECK
+local function hasLineOfSight(character, head)
+    local camera = workspace.CurrentCamera
+    if not camera then return false end
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {
+        LocalPlayer.Character,
+        camera
+    }
+
+    local origin = camera.CFrame.Position
+    local result = workspace:Raycast(
+        origin,
+        head.Position - origin,
+        params
+    )
+
+    return result ~= nil
+        and result.Instance:IsDescendantOf(character)
+end
+
+-- SELECT CLOSEST HEAD INSIDE FOV
+local function getClosestHead()
+    local camera = workspace.CurrentCamera
+    if not camera then return nil end
+
+    local viewport = camera.ViewportSize
+    local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+    local closestHead = nil
+    local closestDistance = FOV_RADIUS
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            local head = character and character:FindFirstChild("Head")
+            local humanoid = character
+                and character:FindFirstChildOfClass("Humanoid")
+
+            if head and humanoid then
+                local valid = true
+
+                if KILL_CHECK and humanoid.Health <= 0 then
+                    valid = false
+                end
+
+                if WALL_CHECK and not hasLineOfSight(character, head) then
+                    valid = false
+                end
+
+                if valid then
+                    local screenPos, onScreen =
+                        camera:WorldToViewportPoint(head.Position)
+
+                    if onScreen and screenPos.Z > 0 then
+                        local distance = (
+                            Vector2.new(screenPos.X, screenPos.Y) - center
+                        ).Magnitude
+
+                        if distance <= closestDistance then
+                            closestDistance = distance
+                            closestHead = head
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return closestHead
+end
+
+-- MAIN UPDATE
+RunService:BindToRenderStep(
+    RENDER_NAME,
+    Enum.RenderPriority.Camera.Value + 1,
+    function()
+        refreshHighlights()
+
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+
+        -- Center circle on the screen-center crosshair.
+        -- IgnoreGuiInset is true, so coordinates match the full screen.
+        local viewport = camera.ViewportSize
+        fovCircle.Position = UDim2.fromOffset(
+            viewport.X / 2,
+            viewport.Y / 2
+        )
+
+        fovCircle.Size = UDim2.fromOffset(
+            FOV_RADIUS * 2,
+            FOV_RADIUS * 2
+        )
+
+        if not AIM_ASSIST then return end
+
+        local head = getClosestHead()
+        if not head or not head.Parent then return end
+
+        -- Instant snap; no Lerp or smoothing.
+        camera.CFrame = CFrame.lookAt(
+            camera.CFrame.Position,
+            head.Position
+        )
+    end
+)
