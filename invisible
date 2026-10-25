@@ -1,0 +1,22 @@
+local pl = game:GetService("Players")
+local lp = pl.LocalPlayer
+local tp = 0.6
+
+local function f(char)
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("BasePart") or v:IsA("MeshPart") then
+            v.Transparency = tp
+        elseif v:IsA("Decal") or v:IsA("Texture") then
+            v.Transparency = tp
+        end
+    end
+end
+
+if lp.Character then
+    f(lp.Character)
+end
+
+lp.CharacterAdded:Connect(function(char)
+    task.wait(0.3)
+    f(char)
+end)
